@@ -1,0 +1,62 @@
+# Node.js
+node_modules/
+.npm/
+.next/
+dist/
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.env
+.venv/
+venv/
+ENV/
+build/
+dist/
+.eggs/
+*.egg-info/
+
+# Docker
+*.log
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# Test/coverage
+coverage/
+*.cover
+*.log
+
+# Misc
+*.swp
+*.swo
+
+# Ignore local data
+*.sqlite3
+*.db
+
+# Ignore compiled proto
+*.pb2.py
+*.pb2_grpc.py
+
+# Ignore secrets
+secrets.*
+
+# Ignore frontend build
+apps/frontend/.next/
+apps/frontend/node_modules/
+
+# Ignore backend build
+services/*/node_modules/
+services/*/__pycache__/
+services/*/dist/
+services/*/.env 

@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: ./Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Development service (optional)
+  frontend-dev:
+    build:
+      context: ./apps/frontend
+      dockerfile: ./Dockerfile.dev
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./apps/frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+    profiles:
+      - dev
+
+  # Scraper Service (gRPC)
+  scraper-service:
+    build:
+      context: ./services/scraper-service
+      dockerfile: Dockerfile
+    ports:
+      - "50051:50051"
+    environment:
+      - MONGO_URI=${MONGO_URI}
+      - NEWS_API_KEY=${NEWS_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+      - DEBUG=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; grpc.insecure_channel('localhost:50051')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MongoDB (for scraper service)
+  mongodb:
+    image: mongo:7.0
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongodb_data: 

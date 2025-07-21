@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-space-grotesk: "Space Grotesk", sans-serif;
+  --font-inter: "Inter", sans-serif;
+  --font-ibm-plex-serif: "IBM Plex Serif", serif;
+  --font-jetbrains-mono: "JetBrains Mono", monospace;
+}
+
+
+
+html {
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+}
+
+.custom-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  background: #00ffcc;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  transition: transform 0.2s ease;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 20px #00ffcc40;
+}
+
+a:hover ~ .custom-cursor,
+button:hover ~ .custom-cursor,
+.interactive:hover ~ .custom-cursor {
+  transform: translate(-50%, -50%) scale(2.5);
+}
+
+.section-snap {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.starfield {
+  background-image: radial-gradient(2px 2px at 20px 30px, #00ffcc, transparent),
+    radial-gradient(2px 2px at 40px 70px, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(1px 1px at 90px 40px, #ff6b6b, transparent),
+    radial-gradient(1px 1px at 130px 80px, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(2px 2px at 160px 30px, rgba(255, 255, 255, 0.3), transparent);
+  background-repeat: repeat;
+  background-size: 200px 100px;
+  animation: twinkle 4s ease-in-out infinite alternate;
+}
+
+@keyframes twinkle {
+  0% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes orbit-vh {
+  from {
+    transform: rotate(0deg) translateX(300px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(300px) rotate(-360deg);
+  }
+}
+
+@keyframes orbit-ld {
+  from {
+    transform: rotate(0deg) translateX(350px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(350px) rotate(-360deg);
+  }
+}
+
+@keyframes orbit-pt {
+  from {
+    transform: rotate(0deg) translateX(400px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(400px) rotate(-360deg);
+  }
+}
+
+@keyframes orbit-sk {
+  from {
+    transform: rotate(0deg) translateX(450px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(450px) rotate(-360deg);
+  }
+}
+
+@keyframes orbit-qu {
+  from {
+    transform: rotate(0deg) translateX(500px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(500px) rotate(-360deg);
+  }
+}
+
+.orbit-vh {
+  animation: orbit-vh 20s linear infinite;
+}
+.orbit-ld {
+  animation: orbit-ld 25s linear infinite;
+}
+.orbit-pt {
+  animation: orbit-pt 30s linear infinite;
+}
+.orbit-sk {
+  animation: orbit-sk 35s linear infinite;
+}
+.orbit-qu {
+  animation: orbit-qu 40s linear infinite;
+}
+
+.glass-morph {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.neon-glow {
+  box-shadow: 0 0 20px #00ffcc40;
+}
+
+.neon-glow:hover {
+  box-shadow: 0 0 30px #00ffcc60;
+}
+
+.font-sans {
+  font-family: var(--font-inter);
+}
+
+.font-serif {
+  font-family: var(--font-ibm-plex-serif);
+}
+
+.font-mono {
+  font-family: var(--font-jetbrains-mono);
+}
+
+.scroll-snap-x {
+  scroll-snap-type: x mandatory;
+}
+
+.scroll-snap-start {
+  scroll-snap-align: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
