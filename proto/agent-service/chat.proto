@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package chat;
+
+import "common.proto";
+
+message ChatRequest {
+  string message = 1;
+  string session_id = 2;
+  bool use_tools = 3;
+  int32 max_tokens = 4;
+}
+
+message ChatResponse {
+  string response = 1;
+  string session_id = 2;
+  repeated string sources = 3;
+  repeated string tool_calls = 4;
+  string reasoning = 5;
+  common.Status status = 6;
+}
+
+message GetChatHistoryRequest {
+  string session_id = 1;
+}
+
+message GetChatHistoryResponse {
+  repeated ChatMessage messages = 1;
+  common.Status status = 2;
+}
+
+message ClearChatHistoryRequest {
+  string session_id = 1;
+}
+
+message ChatMessage {
+  string role = 1;
+  string content = 2;
+  int64 timestamp = 3;
+  string session_id = 4;
+  repeated string sources = 5;
+  repeated string tool_calls = 6;
+} 

@@ -60,3 +60,12 @@ services/*/node_modules/
 services/*/__pycache__/
 services/*/dist/
 services/*/.env 
+
+
+# Ignore generated protobuf code
+services/agent-service/generated/
+# Ignore test scripts
+services/agent-service/app/test_ingest_resume.py
+# Ignore uploaded/test documents but keep the folder
+services/agent-service/app/data/documents/*
+!services/agent-service/app/data/documents/.gitkeep

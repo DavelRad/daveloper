@@ -1,0 +1,45 @@
+# Core Framework Dependencies
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# gRPC Dependencies
+grpcio
+grpcio-tools
+grpcio-reflection
+protobuf
+
+# LangChain Dependencies
+langchain
+langchain-community
+langchain-openai
+langchain-qdrant
+
+# Vector Database
+qdrant-client>=1.9.0,<2.0.0
+
+# OpenAI
+openai
+
+# Document Processing
+PyPDF2
+python-docx
+unstructured
+
+# HTTP Client
+httpx
+
+# Logging and Monitoring
+python-json-logger
+structlog
+
+# Environment Management
+python-dotenv
+
+# Async Support
+asyncio
+
+# Testing (for Phase 3 testing)
+pytest
+pytest-asyncio 
