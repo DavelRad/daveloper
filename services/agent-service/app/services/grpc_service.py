@@ -9,10 +9,11 @@ from generated import (
     chat_pb2, 
     documents_pb2
 )
-from config import get_settings
-from services.document_service import DocumentService
-from services.vector_service import VectorService
-from core.utils import (
+from app.config import get_settings
+from app.services.document_service import DocumentService
+from app.services.vector_service import VectorService
+from app.services.rag_service import rag_service
+from app.core.utils import (
     protobuf_ingest_request_to_pydantic,
     pydantic_ingest_response_to_protobuf,
     pydantic_document_status_to_protobuf,
@@ -35,17 +36,18 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
         self._initialized = False
         logger.info("AgentServiceServicer initialized")
     
-    async def _ensure_initialized(self):
+    def _ensure_initialized(self):
         """Ensure services are initialized."""
         if not self._initialized:
-            await self.document_service.initialize()
-            await self.vector_service.initialize_collection()
+            self.document_service.initialize()
+            self.vector_service.initialize_collection()
+            rag_service.initialize()
             self._initialized = True
     
-    async def HealthCheck(self, request: common_pb2.Empty, context) -> common_pb2.HealthResponse:
+    def HealthCheck(self, request: common_pb2.Empty, context) -> common_pb2.HealthResponse:
         """Health check endpoint."""
         try:
-            await self._ensure_initialized()
+            self._ensure_initialized()
             
             # Check dependencies status
             dependencies = {
@@ -55,11 +57,11 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
             }
             
             # Check vector service health
-            vector_health = await self.vector_service.health_check()
+            vector_health = self.vector_service.health_check()
             dependencies["qdrant"] = "connected" if vector_health else "disconnected"
             
             # Check document service health
-            doc_health = await self.document_service.health_check()
+            doc_health = self.document_service.health_check()
             dependencies["document_service"] = "active" if doc_health else "inactive"
             
             # Check if OpenAI key is configured
@@ -84,7 +86,7 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
                 dependencies={"error": str(e)}
             )
     
-    async def ListTools(self, request: common_pb2.Empty, context) -> agent_service_pb2.ToolsListResponse:
+    def ListTools(self, request: common_pb2.Empty, context) -> agent_service_pb2.ToolsListResponse:
         """List available tools."""
         try:
             # Placeholder tools for Phase 1-3
@@ -118,7 +120,7 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
             context.set_details(f"Failed to list tools: {e}")
             return agent_service_pb2.ToolsListResponse()
     
-    async def TestTool(self, request: agent_service_pb2.ToolTestRequest, context) -> agent_service_pb2.ToolTestResponse:
+    def TestTool(self, request: agent_service_pb2.ToolTestRequest, context) -> agent_service_pb2.ToolTestResponse:
         """Test a specific tool."""
         try:
             tool_name = request.tool_name
@@ -131,7 +133,7 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
                 )
             elif tool_name == "document_ingestion":
                 # Test document service health
-                healthy = await self.document_service.health_check()
+                healthy = self.document_service.health_check()
                 return agent_service_pb2.ToolTestResponse(
                     success=healthy,
                     result="Document ingestion service is ready" if healthy else "Document service unavailable",
@@ -139,7 +141,7 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
                 )
             elif tool_name == "vector_search":
                 # Test vector service health
-                healthy = await self.vector_service.health_check()
+                healthy = self.vector_service.health_check()
                 return agent_service_pb2.ToolTestResponse(
                     success=healthy,
                     result="Vector search is ready" if healthy else "Vector service unavailable",
@@ -162,16 +164,16 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
     
     # Document management endpoints (Phase 3)
     
-    async def IngestDocuments(self, request: documents_pb2.IngestRequest, context) -> documents_pb2.IngestResponse:
+    def IngestDocuments(self, request: documents_pb2.IngestRequest, context) -> documents_pb2.IngestResponse:
         """Ingest documents."""
         try:
-            await self._ensure_initialized()
+            self._ensure_initialized()
             
             # Convert protobuf to Pydantic
             pydantic_request = protobuf_ingest_request_to_pydantic(request)
             
             # Process ingestion
-            response = await self.document_service.ingest_documents(pydantic_request)
+            response = self.document_service.ingest_documents(pydantic_request)
             
             # Convert back to protobuf
             return pydantic_ingest_response_to_protobuf(response)
@@ -183,10 +185,10 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
                 status=create_error_response(str(e))
             )
     
-    async def GetDocumentStatus(self, request: documents_pb2.StatusRequest, context) -> documents_pb2.StatusResponse:
+    def GetDocumentStatus(self, request: documents_pb2.StatusRequest, context) -> documents_pb2.StatusResponse:
         """Get document status."""
         try:
-            status = await self.document_service.get_document_status(request.job_id)
+            status = self.document_service.get_document_status(request.job_id)
             
             if status is None:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -201,12 +203,12 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
             context.set_details(str(e))
             return documents_pb2.StatusResponse()
     
-    async def ListDocuments(self, request: documents_pb2.ListRequest, context) -> documents_pb2.ListResponse:
+    def ListDocuments(self, request: documents_pb2.ListRequest, context) -> documents_pb2.ListResponse:
         """List documents."""
         try:
-            await self._ensure_initialized()
+            self._ensure_initialized()
             
-            documents = await self.document_service.list_documents()
+            documents = self.document_service.list_documents()
             
             # Convert to protobuf
             protobuf_docs = [pydantic_document_info_to_protobuf(doc) for doc in documents]
@@ -223,12 +225,12 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
                 status=create_error_response(str(e))
             )
     
-    async def DeleteDocument(self, request: documents_pb2.DeleteRequest, context) -> common_pb2.StatusResponse:
+    def DeleteDocument(self, request: documents_pb2.DeleteRequest, context) -> common_pb2.StatusResponse:
         """Delete document."""
         try:
-            await self._ensure_initialized()
+            self._ensure_initialized()
             
-            success = await self.document_service.delete_document(request.document_id)
+            success = self.document_service.delete_document(request.document_id)
             
             if success:
                 return common_pb2.StatusResponse(
@@ -245,21 +247,63 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
                 status=create_error_response(str(e))
             )
     
-    # Placeholder implementations for Phase 4-5
+    # RAG Chat Implementation (Phase 4)
     
-    async def SendMessage(self, request: chat_pb2.ChatRequest, context) -> chat_pb2.ChatResponse:
-        """Send chat message - placeholder for Phase 4-5."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details("Chat functionality will be implemented in Phase 4-5")
-        return chat_pb2.ChatResponse()
+    def SendMessage(self, request: chat_pb2.ChatRequest, context) -> chat_pb2.ChatResponse:
+        """Send chat message using RAG with Davel's persona."""
+        try:
+            self._ensure_initialized()
+            
+            # Get question and session info
+            question = request.message
+            session_id = request.session_id if request.session_id else "default_session"
+            
+            # Answer question using RAG
+            result = rag_service.answer_question(
+                question=question,
+                chat_history="",  # TODO: Implement session management in Phase 5
+                include_sources=True,
+                k=request.max_tokens if request.max_tokens > 0 else None
+            )
+            
+            # Convert sources to list of strings
+            sources = result.get("sources", [])
+            if isinstance(sources, list):
+                source_strings = [str(s) for s in sources]
+            else:
+                source_strings = [str(sources)] if sources else []
+            
+            return chat_pb2.ChatResponse(
+                response=result.get("answer", "I apologize, but I couldn't generate a response."),
+                session_id=session_id,
+                sources=source_strings,
+                tool_calls=[],  # TODO: Implement tools in Phase 6
+                reasoning=f"Retrieved {result.get('documents_retrieved', 0)} documents from vector store",
+                status=common_pb2.Status(success=True, message="RAG response generated successfully")
+            )
+            
+        except Exception as e:
+            logger.error(f"SendMessage failed: {e}")
+            return chat_pb2.ChatResponse(
+                response="I apologize, but I'm experiencing technical difficulties right now.",
+                session_id=request.session_id if request.session_id else "default_session",
+                sources=[],
+                tool_calls=[],
+                reasoning="Error occurred during RAG processing",
+                status=common_pb2.Status(
+                    success=False,
+                    message=str(e),
+                    code=grpc.StatusCode.INTERNAL.value[0]
+                )
+            )
     
-    async def GetChatHistory(self, request: chat_pb2.GetChatHistoryRequest, context) -> chat_pb2.GetChatHistoryResponse:
+    def GetChatHistory(self, request: chat_pb2.GetChatHistoryRequest, context) -> chat_pb2.GetChatHistoryResponse:
         """Get chat history - placeholder for Phase 4-5."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Chat history will be implemented in Phase 4-5")
         return chat_pb2.GetChatHistoryResponse()
     
-    async def ClearChatHistory(self, request: chat_pb2.ClearChatHistoryRequest, context) -> common_pb2.StatusResponse:
+    def ClearChatHistory(self, request: chat_pb2.ClearChatHistoryRequest, context) -> common_pb2.StatusResponse:
         """Clear chat history - placeholder for Phase 4-5."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Chat history management will be implemented in Phase 4-5")

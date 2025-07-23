@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     chunk_overlap: int = Field(default=200, env="CHUNK_OVERLAP")
     retrieval_k: int = Field(default=5, env="RETRIEVAL_K")
     
+    # Redis Configuration
+    redis_url: str = Field(default="redis://localhost:6379", env="REDIS_URL")
+    redis_chat_channel: str = Field(default="davel_agent_chat", env="REDIS_CHAT_CHANNEL")
+    redis_session_channel: str = Field(default="davel_agent_sessions", env="REDIS_SESSION_CHANNEL")
+    
     # Optional REST API
     rest_api_enabled: bool = Field(default=False, env="REST_API_ENABLED")
     rest_api_port: int = Field(default=8000, env="REST_API_PORT")

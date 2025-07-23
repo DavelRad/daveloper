@@ -10,8 +10,8 @@ from langchain_core.documents import Document
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 
-from config import get_settings
-from models.documents import DocumentChunk
+from app.config import get_settings
+from app.models.documents import DocumentChunk
 
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class VectorService:
             logger.info("Qdrant vector store initialized")
         return self._vector_store
     
-    async def initialize_collection(self) -> bool:
+    def initialize_collection(self) -> bool:
         """Initialize the Qdrant collection if it doesn't exist."""
         try:
             collection_name = self.settings.qdrant_collection_name
@@ -88,14 +88,14 @@ class VectorService:
             logger.error(f"Failed to initialize collection: {e}")
             return False
     
-    async def add_documents(self, documents: List[Document]) -> List[str]:
+    def add_documents(self, documents: List[Document]) -> List[str]:
         """Add documents to the vector store."""
         try:
             if not documents:
                 return []
             
             # Add documents to vector store
-            vector_ids = await self.vector_store.aadd_documents(documents)
+            vector_ids = self.vector_store.add_documents(documents)
             logger.info(f"Added {len(documents)} documents to vector store")
             
             return vector_ids
@@ -104,7 +104,7 @@ class VectorService:
             logger.error(f"Failed to add documents: {e}")
             raise
     
-    async def add_document_chunks(self, chunks: List[DocumentChunk]) -> List[str]:
+    def add_document_chunks(self, chunks: List[DocumentChunk]) -> List[str]:
         """Add document chunks to the vector store."""
         try:
             # Convert chunks to LangChain documents
@@ -120,13 +120,13 @@ class VectorService:
                 )
                 documents.append(doc)
             
-            return await self.add_documents(documents)
+            return self.add_documents(documents)
             
         except Exception as e:
             logger.error(f"Failed to add document chunks: {e}")
             raise
     
-    async def similarity_search(
+    def similarity_search(
         self, 
         query: str, 
         k: int = None, 
@@ -138,13 +138,13 @@ class VectorService:
             
             # Perform similarity search
             if filter_dict:
-                results = await self.vector_store.asimilarity_search(
+                results = self.vector_store.similarity_search(
                     query=query,
                     k=k,
                     filter=filter_dict
                 )
             else:
-                results = await self.vector_store.asimilarity_search(
+                results = self.vector_store.similarity_search(
                     query=query,
                     k=k
                 )
@@ -156,7 +156,7 @@ class VectorService:
             logger.error(f"Similarity search failed: {e}")
             raise
     
-    async def delete_documents(self, document_ids: List[str]) -> bool:
+    def delete_documents(self, document_ids: List[str]) -> bool:
         """Delete documents by their IDs."""
         try:
             # Filter documents by document_id metadata
@@ -174,7 +174,7 @@ class VectorService:
             logger.error(f"Failed to delete documents: {e}")
             return False
     
-    async def get_collection_info(self) -> Dict[str, Any]:
+    def get_collection_info(self) -> Dict[str, Any]:
         """Get information about the collection."""
         try:
             collection_name = self.settings.qdrant_collection_name
@@ -191,21 +191,21 @@ class VectorService:
             logger.error(f"Failed to get collection info: {e}")
             return {}
     
-    async def health_check(self) -> bool:
+    def health_check(self) -> bool:
         """Check if the vector service is healthy."""
         try:
             # Test connection by getting collection info
-            await self.get_collection_info()
+            self.get_collection_info()
             return True
             
         except Exception as e:
             logger.error(f"Vector service health check failed: {e}")
             return False
     
-    async def create_embeddings(self, texts: List[str]) -> List[List[float]]:
+    def create_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Create embeddings for a list of texts."""
         try:
-            embeddings = await self.embeddings.aembed_documents(texts)
+            embeddings = self.embeddings.embed_documents(texts)
             logger.info(f"Created embeddings for {len(texts)} texts")
             return embeddings
             

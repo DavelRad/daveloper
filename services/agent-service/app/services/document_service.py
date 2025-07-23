@@ -1,7 +1,7 @@
 """Document processing service using LangChain."""
 
 import logging
-import asyncio
+import threading
 import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -17,16 +17,16 @@ from langchain_community.document_loaders import (
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
-from config import get_settings
-from models.documents import (
+from app.config import get_settings
+from app.models.documents import (
     DocumentInfo, 
     IngestRequest, 
     IngestResponse, 
     DocumentStatusResponse,
     DocumentChunk
 )
-from services.vector_service import VectorService
-from core.utils import validate_file_path, get_file_type
+from app.services.vector_service import VectorService
+from app.core.utils import validate_file_path, get_file_type
 
 
 logger = logging.getLogger(__name__)
@@ -50,11 +50,11 @@ class DocumentService:
         
         logger.info("Document service initialized")
     
-    async def initialize(self) -> bool:
+    def initialize(self) -> bool:
         """Initialize the document service."""
         try:
             # Initialize vector store collection
-            success = await self.vector_service.initialize_collection()
+            success = self.vector_service.initialize_collection()
             if success:
                 logger.info("Document service initialized successfully")
             return success
@@ -80,11 +80,11 @@ class DocumentService:
         
         return loader_class(file_path)
     
-    async def _load_document(self, file_path: str) -> List[Document]:
+    def _load_document(self, file_path: str) -> List[Document]:
         """Load a single document using appropriate loader."""
         try:
             loader = self._get_document_loader(file_path)
-            documents = await asyncio.to_thread(loader.load)
+            documents = loader.load()
             
             # Add metadata
             for doc in documents:
@@ -113,7 +113,7 @@ class DocumentService:
             logger.error(f"Failed to split documents: {e}")
             raise
     
-    async def _process_document(self, file_path: str, document_id: str) -> DocumentInfo:
+    def _process_document(self, file_path: str, document_id: str) -> DocumentInfo:
         """Process a single document through the full pipeline."""
         try:
             # Create document info
@@ -125,7 +125,7 @@ class DocumentService:
             )
             
             # Load document
-            documents = await self._load_document(file_path)
+            documents = self._load_document(file_path)
             
             # Split into chunks
             chunks = self._split_documents(documents)
@@ -142,7 +142,7 @@ class DocumentService:
                 document_chunks.append(doc_chunk)
             
             # Add to vector store
-            vector_ids = await self.vector_service.add_document_chunks(document_chunks)
+            vector_ids = self.vector_service.add_document_chunks(document_chunks)
             
             # Update document info
             doc_info.chunk_count = len(chunks)
@@ -166,7 +166,7 @@ class DocumentService:
             )
             return doc_info
     
-    async def ingest_documents(self, request: IngestRequest) -> IngestResponse:
+    def ingest_documents(self, request: IngestRequest) -> IngestResponse:
         """Ingest multiple documents."""
         try:
             job_id = str(uuid.uuid4())
@@ -198,7 +198,7 @@ class DocumentService:
             }
             
             # Start processing in background
-            asyncio.create_task(self._process_ingestion_job(job_id))
+            threading.Thread(target=self._process_ingestion_job, args=(job_id,), daemon=True).start()
             
             return IngestResponse(
                 job_id=job_id,
@@ -214,7 +214,7 @@ class DocumentService:
                 message=str(e)
             )
     
-    async def _process_ingestion_job(self, job_id: str):
+    def _process_ingestion_job(self, job_id: str):
         """Process ingestion job in background."""
         try:
             job = self.ingestion_jobs[job_id]
@@ -225,7 +225,7 @@ class DocumentService:
                     document_id = str(uuid.uuid4())
                     
                     # Process document
-                    doc_info = await self._process_document(file_path, document_id)
+                    doc_info = self._process_document(file_path, document_id)
                     
                     # Store document info
                     self.documents[document_id] = doc_info
@@ -248,7 +248,7 @@ class DocumentService:
                 self.ingestion_jobs[job_id]["status"] = "failed"
                 self.ingestion_jobs[job_id]["error_message"] = str(e)
     
-    async def get_document_status(self, job_id: str) -> Optional[DocumentStatusResponse]:
+    def get_document_status(self, job_id: str) -> Optional[DocumentStatusResponse]:
         """Get the status of a document ingestion job."""
         try:
             job = self.ingestion_jobs.get(job_id)
@@ -267,7 +267,7 @@ class DocumentService:
             logger.error(f"Failed to get document status: {e}")
             return None
     
-    async def list_documents(self) -> List[DocumentInfo]:
+    def list_documents(self) -> List[DocumentInfo]:
         """List all processed documents."""
         try:
             return list(self.documents.values())
@@ -276,7 +276,7 @@ class DocumentService:
             logger.error(f"Failed to list documents: {e}")
             return []
     
-    async def delete_document(self, document_id: str) -> bool:
+    def delete_document(self, document_id: str) -> bool:
         """Delete a document and its chunks from the vector store."""
         try:
             doc_info = self.documents.get(document_id)
@@ -285,7 +285,7 @@ class DocumentService:
                 return False
             
             # Delete from vector store
-            success = await self.vector_service.delete_documents([document_id])
+            success = self.vector_service.delete_documents([document_id])
             
             if success:
                 # Remove from local storage
@@ -299,11 +299,11 @@ class DocumentService:
             logger.error(f"Failed to delete document {document_id}: {e}")
             return False
     
-    async def health_check(self) -> bool:
+    def health_check(self) -> bool:
         """Check if the document service is healthy."""
         try:
             # Check vector service health
-            vector_health = await self.vector_service.health_check()
+            vector_health = self.vector_service.health_check()
             return vector_health
             
         except Exception as e:

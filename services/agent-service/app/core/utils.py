@@ -1,17 +1,18 @@
 """Utility functions for the Agent Service."""
 
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+# import sys
+# import os
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import logging
-from typing import List, Dict, Any, Optional
+import os
+from typing import List, Dict, Optional
 from datetime import datetime
 import time
 
 from generated import common_pb2, chat_pb2, documents_pb2
-from models.chat import ChatMessage, ChatRequest, ChatResponse
-from models.documents import DocumentInfo, IngestRequest, IngestResponse, DocumentStatusResponse
+from app.models.chat import ChatMessage, ChatRequest, ChatResponse
+from app.models.documents import DocumentInfo, IngestRequest, IngestResponse, DocumentStatusResponse
 
 
 logger = logging.getLogger(__name__)

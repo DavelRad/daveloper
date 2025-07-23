@@ -1,9 +1,9 @@
-# Davel Agent Service - Architecture & Implementation Plan (LangChain + gRPC)
+# Davel Agent Service - Architecture & Implementation Plan (LangChain + gRPC + Redis)
 
 ## Overview
-The Davel Agent is a personal AI assistant that embodies Davel's persona, knowledge, and communication style. Built with LangChain and served via gRPC, it responds in first person as Davel, drawing from uploaded personal documents and live public profile data to answer questions about Davel's background, experience, and projects.
+The Davel Agent is a personal AI assistant that embodies Davel's persona, knowledge, and communication style for the Daveloper.dev portfolio platform. Built with LangChain and served via gRPC, it responds in first person as Davel, drawing from uploaded personal documents and live public profile data to answer questions about Davel's background, experience, and projects.
 
-This service is part of a microservice architecture where a NestJS API Gateway orchestrates communication between the Next.js frontend and backend services.
+This service is a core component of the Daveloper.dev portfolio platform, providing real-time AI chat capabilities through a microservice architecture where a NestJS API Gateway orchestrates communication between the Next.js frontend and backend services. The agent streams responses in real-time via Redis Pub/Sub, enabling live chat interactions on the portfolio website.
 
 ## System Architecture
 
@@ -11,23 +11,32 @@ This service is part of a microservice architecture where a NestJS API Gateway o
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Frontend      │    │   API Gateway   │    │  Agent Service  │
 │   (Next.js)     │◄──►│   (NestJS)      │◄──►│ (LangChain +    │
-└─────────────────┘    │                 │    │  FastAPI +      │
-                       │                 │    │  gRPC Server)   │
-                       │                 │    └─────────────────┘
+│                 │    │                 │    │  FastAPI +      │
+│  WebSocket      │    │  WebSocket      │    │  gRPC Server)   │
+│   Chat Client   │    │   Manager       │    │                 │
+└─────────────────┘    │                 │    └─────────────────┘
                        │                 │    ┌─────────────────┐
                        │                 │◄──►│ Scraper Service │
                        └─────────────────┘    │ (Python +       │
                               │               │  gRPC Server)   │
                               ▼               └─────────────────┘
                        ┌─────────────────┐    ┌─────────────────┐
-                       │   Qdrant Cloud  │    │     OpenAI      │
-                       │  (Vector Store) │    │      API        │
-                       └─────────────────┘    └─────────────────┘
+                       │   Redis Pub/Sub │    │   Qdrant Cloud  │
+                       │  (Real-time     │    │  (Vector Store) │
+                       │   Streaming)    │    └─────────────────┘
+                       └─────────────────┘    ┌─────────────────┐
+                              │               │     OpenAI      │
+                              ▼               │      API        │
+                       ┌─────────────────┐    └─────────────────┘
+                       │   Supabase      │
+                       │  (Postgres)     │
+                       └─────────────────┘
 ```
 
 **Communication Protocols:**
-- **Frontend ↔ API Gateway**: REST (HTTP/JSON)
+- **Frontend ↔ API Gateway**: WebSocket (real-time chat) + REST (HTTP/JSON)
 - **API Gateway ↔ Microservices**: gRPC (binary, type-safe)
+- **Agent Service → API Gateway**: Redis Pub/Sub (token streaming)
 - **Internal LangChain**: Python objects and chains
 
 ## Tech Stack
@@ -41,9 +50,10 @@ This service is part of a microservice architecture where a NestJS API Gateway o
 - **Memory**: LangChain ConversationBufferMemory
 - **RPC Framework**: gRPC (grpcio, grpcio-tools)
 - **Protocol Buffers**: protobuf (service contracts)
+- **Real-time Communication**: Redis Pub/Sub (redis-py)
 - **HTTP Client**: httpx (for custom tools)
 - **Environment**: Docker + docker-compose
-- **Service Integration**: gRPC communication with NestJS API Gateway
+- **Service Integration**: gRPC communication with NestJS API Gateway + Redis streaming
 
 ## LangChain Components
 
@@ -347,6 +357,11 @@ message HealthResponse {
 ## Environment Variables
 
 ```bash
+# Redis Configuration
+REDIS_URL=redis://redis:6379
+REDIS_CHAT_CHANNEL=chat_tokens
+REDIS_SESSION_CHANNEL=chat_sessions
+
 # OpenAI
 OPENAI_API_KEY=your_openai_api_key
 
@@ -532,18 +547,19 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
 
 ## Data Flow
 
-### Chat Request Flow (with gRPC)
-1. User sends message via **Next.js Frontend**
-2. **NestJS API Gateway** receives REST request
-3. **NestJS** calls **agent-service** via gRPC (SendMessage)
+### Chat Request Flow (with Real-time Streaming)
+1. User opens **Chat widget** on Next.js Frontend → WebSocket connection established
+2. User sends message via **WebSocket** to **NestJS API Gateway**
+3. **NestJS** calls **agent-service** via gRPC (SendMessage) with streaming enabled
 4. **Agent Chain** determines if tools are needed
 5. If tools needed: Execute tools (GitHub API, etc.)
 6. **RAG Chain** retrieves relevant document chunks from Qdrant
 7. **Prompt Template** assembles context + conversation history
-8. **LLM** generates response as Davel
-9. **gRPC response** sent back to NestJS with sources and tool usage info
-10. **NestJS** formats and returns REST response to frontend
-11. Frontend stores conversation in browser localStorage
+8. **LLM** generates response as Davel with token streaming
+9. **Agent Service** streams tokens via **Redis Pub/Sub** (chat_tokens channel)
+10. **NestJS** subscribes to Redis channel and relays tokens via **WebSocket** to frontend
+11. **Frontend** renders tokens in real-time as they arrive
+12. Conversation history stored in browser localStorage + Supabase for persistence
 
 ### Document Ingestion Flow (with gRPC)
 1. **NestJS** triggers document ingestion via gRPC (IngestDocuments)
@@ -563,38 +579,38 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
 ## Implementation TODO List
 
 ### Phase 1: gRPC Foundation (Priority: High)
-- [ ] Set up gRPC server structure with FastAPI
-- [ ] Define protobuf service contracts (.proto files)
-- [ ] Generate Python gRPC stubs and classes
-- [ ] Implement basic gRPC server with health check
-- [ ] Create gRPC service wrapper classes
-- [ ] Set up gRPC error handling and status codes
-- [ ] Configure logging for gRPC operations
+- [x] Set up gRPC server structure with FastAPI
+- [x] Define protobuf service contracts (.proto files)
+- [x] Generate Python gRPC stubs and classes
+- [x] Implement basic gRPC server with health check
+- [x] Create gRPC service wrapper classes
+- [x] Set up gRPC error handling and status codes
+- [x] Configure logging for gRPC operations
 
 ### Phase 2: LangChain Foundation (Priority: High)
-- [ ] Set up FastAPI project structure with LangChain
-- [ ] Install and configure LangChain dependencies
-- [ ] Create configuration for OpenAI and Qdrant via LangChain
-- [ ] Set up basic logging and LangSmith tracing
-- [ ] Create Pydantic models for internal data structures
-- [ ] Implement conversion between Pydantic and protobuf models
+- [x] Set up FastAPI project structure with LangChain
+- [x] Install and configure LangChain dependencies
+- [x] Create configuration for OpenAI and Qdrant via LangChain
+- [x] Set up basic logging and LangSmith tracing
+- [x] Create Pydantic models for internal data structures
+- [x] Implement conversion between Pydantic and protobuf models
 
 ### Phase 3: Document Ingestion Chain (Priority: High)
-- [ ] Implement LangChain document loaders (PDF, DOCX, TXT)
-- [ ] Configure RecursiveCharacterTextSplitter
-- [ ] Set up OpenAI embeddings integration
-- [ ] Configure QdrantVectorStore connection
-- [ ] Build document ingestion chain
-- [ ] Implement gRPC document management endpoints
-- [ ] Test end-to-end document processing via gRPC
+- [x] Implement LangChain document loaders (PDF, DOCX, TXT)
+- [x] Configure RecursiveCharacterTextSplitter
+- [x] Set up OpenAI embeddings integration
+- [x] Configure QdrantVectorStore connection
+- [x] Build document ingestion chain
+- [x] Implement gRPC document management endpoints
+- [x] Test end-to-end document processing via gRPC
 
 ### Phase 4: RAG Chain Implementation (Priority: High)
-- [ ] Create retrieval chain with QdrantVectorStore
-- [ ] Design and implement Davel persona prompts
-- [ ] Build RAG chain for question answering
-- [ ] Implement context assembly and prompt formatting
-- [ ] Test RAG functionality with sample questions
-- [ ] Add source attribution to gRPC responses
+- [x] Create retrieval chain with QdrantVectorStore
+- [x] Design and implement Davel persona prompts
+- [x] Build RAG chain for question answering
+- [x] Implement context assembly and prompt formatting
+- [x] Test RAG functionality with sample questions
+- [x] Add source attribution to gRPC responses
 
 ### Phase 5: Memory and Session Management (Priority: High)
 - [ ] Implement ConversationBufferMemory
@@ -611,20 +627,23 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
 - [ ] Implement agent decision-making logic
 - [ ] Test tool calling via gRPC agent responses
 
-### Phase 7: gRPC Chat API Integration (Priority: High)
+### Phase 7: Real-time Chat Integration (Priority: High)
 - [ ] Implement SendMessage gRPC endpoint with LangChain integration
-- [ ] Add gRPC streaming responses for real-time chat
-- [ ] Integrate agent and RAG chains with gRPC
-- [ ] Test complete chat flow via gRPC
+- [ ] Add Redis Pub/Sub integration for token streaming
+- [ ] Implement token streaming from LangChain to Redis
+- [ ] Integrate agent and RAG chains with real-time streaming
+- [ ] Test complete real-time chat flow (gRPC → Redis → WebSocket)
 - [ ] Add rate limiting and gRPC interceptors
+- [ ] Implement session management with Redis
 
 ### Phase 8: Enhanced Features (Priority: Medium)
 - [ ] Add LangSmith tracing and debugging
 - [ ] Implement gRPC interceptors for logging and metrics
-- [ ] Add response caching mechanisms
+- [ ] Add Redis caching mechanisms for improved performance
 - [ ] Enhance tool error handling
-- [ ] Add agent reasoning transparency in gRPC responses
-- [ ] Optimize chain performance for gRPC calls
+- [ ] Add agent reasoning transparency in streaming responses
+- [ ] Optimize chain performance for real-time streaming
+- [ ] Implement conversation persistence in Supabase
 
 ### Phase 9: Production Features (Priority: Low)
 - [ ] Add comprehensive gRPC error handling
@@ -637,9 +656,10 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
 ### Phase 10: Integration Testing (Priority: Medium)
 - [ ] Create gRPC client tests for all endpoints
 - [ ] Test integration with NestJS API Gateway
-- [ ] Add end-to-end testing with mock NestJS calls
-- [ ] Performance testing for gRPC vs REST comparison
-- [ ] Load testing for concurrent gRPC connections
+- [ ] Add end-to-end testing with real-time streaming
+- [ ] Performance testing for Redis Pub/Sub vs direct gRPC
+- [ ] Load testing for concurrent WebSocket connections
+- [ ] Test complete portfolio platform integration
 
 ### Phase 11: Documentation & Monitoring (Priority: Low)
 - [ ] Document gRPC API and service contracts
@@ -647,6 +667,26 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
 - [ ] Add gRPC metrics and monitoring
 - [ ] Create deployment and setup guides
 - [ ] Add performance benchmarking
+
+## Real-time Streaming Architecture
+
+### Redis Pub/Sub Integration
+- **Token Streaming**: Stream LLM tokens in real-time via Redis channels
+- **Session Management**: Track chat sessions and conversation state
+- **Scalability**: Redis handles multiple concurrent chat sessions
+- **Reliability**: Persistent message delivery with retry mechanisms
+
+### WebSocket Integration
+- **Real-time Frontend**: Direct token streaming to browser
+- **Low Latency**: Minimal delay between token generation and display
+- **Connection Management**: Handle WebSocket connections and disconnections
+- **Cross-platform**: Works across all modern browsers and devices
+
+### Portfolio Platform Integration
+- **Live Chat Widget**: Embedded chat interface on portfolio website
+- **Seamless UX**: Real-time responses without page refreshes
+- **Brand Consistency**: Chat maintains Davel's persona and style
+- **Performance**: Optimized for portfolio website performance
 
 ## gRPC-Specific Benefits
 
@@ -705,7 +745,7 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
 - Service mesh integration (Istio, Linkerd)
 - Cloud-hosted Qdrant for scalability
 
-## Integration with NestJS API Gateway
+## Integration with Daveloper.dev Portfolio Platform
 
 ### NestJS gRPC Client Configuration
 ```typescript
@@ -732,12 +772,13 @@ import { join } from 'path';
 export class AgentModule {}
 ```
 
-### Service Integration Pattern
+### Real-time Chat Service Integration
 ```typescript
-// NestJS service calling agent-service
+// NestJS service with Redis streaming
 import { Injectable, Inject } from '@nestjs/common';
 import { ClientGrpc } from '@nestjs/microservices';
 import { Observable } from 'rxjs';
+import Redis from 'ioredis';
 
 interface AgentService {
   sendMessage(data: ChatRequest): Observable<ChatResponse>;
@@ -747,25 +788,58 @@ interface AgentService {
 @Injectable()
 export class ChatService {
   private agentService: AgentService;
+  private redis: Redis;
 
-  constructor(@Inject('AGENT_SERVICE') private client: ClientGrpc) {}
+  constructor(
+    @Inject('AGENT_SERVICE') private client: ClientGrpc,
+    @Inject('REDIS_CLIENT') private redisClient: Redis
+  ) {
+    this.redis = redisClient;
+  }
 
   onModuleInit() {
     this.agentService = this.client.getService<AgentService>('AgentService');
   }
 
-  async sendMessage(message: string, sessionId: string): Promise<ChatResponse> {
-    return this.agentService.sendMessage({ message, sessionId }).toPromise();
+  async sendMessage(message: string, sessionId: string): Promise<void> {
+    // Call agent service via gRPC
+    const response = await this.agentService.sendMessage({ 
+      message, 
+      sessionId,
+      use_tools: true 
+    }).toPromise();
+    
+    // Stream tokens via Redis Pub/Sub
+    await this.redis.publish('chat_tokens', JSON.stringify({
+      sessionId,
+      tokens: response.response,
+      sources: response.sources,
+      tool_calls: response.tool_calls
+    }));
+  }
+
+  // WebSocket handler for real-time streaming
+  handleWebSocketConnection(client: any, sessionId: string) {
+    const subscriber = this.redis.duplicate();
+    subscriber.subscribe('chat_tokens');
+    
+    subscriber.on('message', (channel, message) => {
+      const data = JSON.parse(message);
+      if (data.sessionId === sessionId) {
+        client.send(JSON.stringify(data));
+      }
+    });
   }
 }
 ```
 
-### API Gateway Requirements
-- Handle REST to gRPC conversion
-- Manage session state and authentication
-- Aggregate responses from multiple services
-- Handle gRPC errors and convert to HTTP status codes
-- Implement caching strategies for gRPC responses
+### Portfolio Platform Integration Requirements
+- **WebSocket Management**: Handle real-time chat connections for portfolio visitors
+- **Session Management**: Track chat sessions and conversation history
+- **Redis Integration**: Stream tokens from agent-service to frontend
+- **Error Handling**: Graceful handling of service failures
+- **Performance**: Optimize for portfolio website performance
+- **Brand Consistency**: Maintain Davel's persona across all interactions
 
 ---
 

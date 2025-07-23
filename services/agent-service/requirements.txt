@@ -37,6 +37,9 @@ structlog
 # Environment Management
 python-dotenv
 
+# Redis Dependencies
+redis
+
 # Async Support
 asyncio
 
