@@ -21,10 +21,55 @@ from app.core.utils import (
     pydantic_to_protobuf_status,
     create_error_response
 )
+from langchain.memory import ConversationBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage
+from app.services.redis_service import redis_service
+from datetime import datetime
 
 
 logger = logging.getLogger(__name__)
 
+
+class MemoryManager:
+    """Manages ConversationBufferMemory per session, with Redis persistence."""
+    def __init__(self):
+        self.memories = {}
+
+    def get_memory(self, session_id: str):
+        if session_id not in self.memories:
+            self.memories[session_id] = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+        return self.memories[session_id]
+
+    def load_history(self, session_id: str):
+        data = redis_service.get_session_data(session_id)
+        if data and "history" in data:
+            memory = self.get_memory(session_id)
+            # Clear and repopulate memory
+            memory.clear()
+            for msg in data["history"]:
+                if msg["role"] == "user":
+                    memory.chat_memory.add_message(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    memory.chat_memory.add_message(AIMessage(content=msg["content"]))
+        return self.get_memory(session_id)
+
+    def save_history(self, session_id: str):
+        memory = self.get_memory(session_id)
+        # Serialize history for Redis
+        history = []
+        for msg in memory.chat_memory.messages:
+            if isinstance(msg, HumanMessage):
+                history.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, AIMessage):
+                history.append({"role": "assistant", "content": msg.content})
+        redis_service.store_session_data(session_id, {"history": history})
+
+    def clear_history(self, session_id: str):
+        if session_id in self.memories:
+            self.memories[session_id].clear()
+        redis_service.delete_session_data(session_id)
+
+memory_manager = MemoryManager()
 
 class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
     """gRPC servicer implementation for the Agent Service."""
@@ -250,38 +295,46 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
     # RAG Chat Implementation (Phase 4)
     
     def SendMessage(self, request: chat_pb2.ChatRequest, context) -> chat_pb2.ChatResponse:
-        """Send chat message using RAG with Davel's persona."""
+        """Send chat message using RAG with Davel's persona and persistent memory."""
         try:
             self._ensure_initialized()
-            
-            # Get question and session info
             question = request.message
             session_id = request.session_id if request.session_id else "default_session"
-            
+
+            # Load chat history from Redis and memory
+            memory = memory_manager.load_history(session_id)
+            # Add user message to memory
+            memory.chat_memory.add_message(HumanMessage(content=question))
+            # Format chat history for RAG
+            chat_history_str = "\n".join([
+                f"User: {m.content}" if isinstance(m, HumanMessage) else f"Assistant: {m.content}"
+                for m in memory.chat_memory.messages
+            ])
             # Answer question using RAG
             result = rag_service.answer_question(
                 question=question,
-                chat_history="",  # TODO: Implement session management in Phase 5
+                chat_history=chat_history_str,
                 include_sources=True,
                 k=request.max_tokens if request.max_tokens > 0 else None
             )
-            
+            # Add assistant message to memory
+            memory.chat_memory.add_message(AIMessage(content=result.get("answer", "")))
+            # Persist updated history
+            memory_manager.save_history(session_id)
             # Convert sources to list of strings
             sources = result.get("sources", [])
             if isinstance(sources, list):
                 source_strings = [str(s) for s in sources]
             else:
                 source_strings = [str(sources)] if sources else []
-            
             return chat_pb2.ChatResponse(
                 response=result.get("answer", "I apologize, but I couldn't generate a response."),
                 session_id=session_id,
                 sources=source_strings,
-                tool_calls=[],  # TODO: Implement tools in Phase 6
+                tool_calls=[],
                 reasoning=f"Retrieved {result.get('documents_retrieved', 0)} documents from vector store",
                 status=common_pb2.Status(success=True, message="RAG response generated successfully")
             )
-            
         except Exception as e:
             logger.error(f"SendMessage failed: {e}")
             return chat_pb2.ChatResponse(
@@ -296,15 +349,38 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
                     code=grpc.StatusCode.INTERNAL.value[0]
                 )
             )
-    
+
     def GetChatHistory(self, request: chat_pb2.GetChatHistoryRequest, context) -> chat_pb2.GetChatHistoryResponse:
-        """Get chat history - placeholder for Phase 4-5."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details("Chat history will be implemented in Phase 4-5")
-        return chat_pb2.GetChatHistoryResponse()
-    
+        """Get chat history for a session from Redis."""
+        try:
+            session_id = request.session_id if request.session_id else "default_session"
+            data = redis_service.get_session_data(session_id)
+            messages = []
+            if data and "history" in data:
+                for msg in data["history"]:
+                    messages.append(chat_pb2.ChatMessage(
+                        role=msg["role"],
+                        content=msg["content"],
+                        timestamp=int(datetime.utcnow().timestamp()),
+                        session_id=session_id,
+                        sources=[],
+                        tool_calls=[]
+                    ))
+            return chat_pb2.GetChatHistoryResponse(messages=messages, status=common_pb2.Status(success=True))
+        except Exception as e:
+            logger.error(f"GetChatHistory failed: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return chat_pb2.GetChatHistoryResponse()
+
     def ClearChatHistory(self, request: chat_pb2.ClearChatHistoryRequest, context) -> common_pb2.StatusResponse:
-        """Clear chat history - placeholder for Phase 4-5."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details("Chat history management will be implemented in Phase 4-5")
-        return common_pb2.StatusResponse() 
+        """Clear chat history for a session in Redis and memory."""
+        try:
+            session_id = request.session_id if request.session_id else "default_session"
+            memory_manager.clear_history(session_id)
+            return common_pb2.StatusResponse(status=common_pb2.Status(success=True, message="Chat history cleared"))
+        except Exception as e:
+            logger.error(f"ClearChatHistory failed: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return common_pb2.StatusResponse(status=common_pb2.Status(success=False, message=str(e))) 
