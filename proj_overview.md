@@ -62,7 +62,7 @@ flowchart TB
 	•	Scraper Service (Python)
 	•	Receives jobs (gRPC or Redis), scrapes news, calls AI for summaries, stores results, emits logs
 	•	Agent Service (Python + LangChain)
-	•	Handles RAG chat via gRPC, looks up embeddings, calls LLM, streams tokens
+	•	Handles RAG chat via gRPC, looks up embeddings, calls LLM, manages chat sessions
 	•	Data Layer
 	•	Redis for job queue and real-time Pub/Sub
 	•	Supabase (Postgres) for structured job/chat metadata
@@ -107,7 +107,7 @@ Chat Agent
 5. Tech Stack
 	•	Frontend: Next.js · React · TypeScript · TailwindCSS · Framer Motion
 	•	API: NestJS · TypeScript · ioredis · @supabase/supabase-js · @nestjs/microservices (gRPC)
-	•	Services: Python · grpcio · LangChain · BeautifulSoup · asyncio
+	•	Services: Python · grpcio · LangChain · BeautifulSoup · redis
 	•	Databases: Supabase Postgres · MongoDB Atlas · Qdrant/Pinecone (Vector DB)
 	•	AI: OpenAI GPT-3.5/4 · Perplexity AI (Gemini)
 	•	Orchestration: Docker + docker-compose

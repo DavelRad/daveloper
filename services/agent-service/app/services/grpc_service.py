@@ -297,20 +297,29 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
     # RAG Chat Implementation (Phase 4)
     
     def SendMessage(self, request: chat_pb2.ChatRequest, context) -> chat_pb2.ChatResponse:
-        """Send chat message using RAG with Davel's persona and persistent memory."""
+        """Send chat message using agent streaming with Redis pub/sub for real-time tokens."""
         try:
-            response = self.agent_service.send_message(
+            # Collect all streaming tokens while publishing to Redis
+            full_response = ""
+            tool_calls = []
+            sources = []
+            reasoning = ""
+            
+            for token in self.agent_service.send_message_streaming(
                 message=request.message,
                 session_id=request.session_id,
                 use_tools=request.use_tools,
                 max_tokens=request.max_tokens
-            )
+            ):
+                full_response += token
+            
+            # Final response with complete content
             return chat_pb2.ChatResponse(
-                response=response["response"],
-                session_id=response["session_id"],
-                sources=response["sources"],
-                tool_calls=response["tool_calls"],
-                reasoning=response["reasoning"],
+                response=full_response,
+                session_id=request.session_id,
+                sources=sources,
+                tool_calls=tool_calls,
+                reasoning="Streaming completed via Redis",
                 status=common_pb2.Status(success=True)
             )
         except Exception as e:

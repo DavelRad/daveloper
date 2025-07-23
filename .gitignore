@@ -66,9 +66,6 @@ services/*/.env
 services/agent-service/generated/
 # Ignore test scripts
 services/agent-service/app/test_ingest_resume.py
-services/agent-service/test_rag.py
-services/agent-service/test_redis.py
-services/agent-service/test_service.py
 # Ignore uploaded/test documents but keep the folder
 services/agent-service/app/data/documents/*
 !services/agent-service/app/data/documents/.gitkeep

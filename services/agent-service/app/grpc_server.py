@@ -6,10 +6,9 @@ from typing import Optional
 from generated import agent_service_pb2_grpc
 from app.services.grpc_service import AgentServiceServicer
 from app.config import get_settings
-
+from app.core.grpc_interceptors import get_interceptors
 
 logger = logging.getLogger(__name__)
-
 
 class GrpcServer:
     """gRPC server for the Agent Service."""
@@ -22,9 +21,16 @@ class GrpcServer:
     def start(self) -> None:
         """Start the gRPC server."""
         try:
-            # Create server with thread pool executor
+            # Get interceptors for logging, metrics, and rate limiting
+            interceptors = get_interceptors(
+                enable_rate_limiting=True,
+                enable_metrics=True
+            )
+            
+            # Create server with thread pool executor and interceptors
             self.server = grpc.server(
-                futures.ThreadPoolExecutor(max_workers=self.settings.grpc_max_workers)
+                futures.ThreadPoolExecutor(max_workers=self.settings.grpc_max_workers),
+                interceptors=interceptors
             )
             
             # Add servicer to server
@@ -49,7 +55,7 @@ class GrpcServer:
             
             # Start server
             self.server.start()
-            logger.info(f"gRPC server started on {listen_addr}")
+            logger.info(f"gRPC server started on {listen_addr} with interceptors")
             
         except Exception as e:
             logger.error(f"Failed to start gRPC server: {e}")
