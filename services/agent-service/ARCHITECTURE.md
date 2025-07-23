@@ -620,12 +620,12 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
 - [x] Implement session persistence strategies
 
 ### Phase 6: Tools and Agent Chain (Priority: Medium)
-- [ ] Create base tool class and structure
-- [ ] Implement GitHub API tools (repos, commits, profile)
-- [ ] Build portfolio scraper tool
-- [ ] Configure AgentExecutor with tools
-- [ ] Implement agent decision-making logic
-- [ ] Test tool calling via gRPC agent responses
+- [x] Create base tool class and structure
+- [x] Implement GitHub API tools (repos, commits, profile)
+- [x] Build portfolio scraper tool
+- [x] Configure AgentExecutor with tools
+- [x] Implement agent decision-making logic
+- [x] Test tool calling via gRPC agent responses
 
 ### Phase 7: Real-time Chat Integration (Priority: High)
 - [ ] Implement SendMessage gRPC endpoint with LangChain integration

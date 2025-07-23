@@ -25,6 +25,7 @@ from langchain.memory import ConversationBufferMemory
 from langchain_core.messages import HumanMessage, AIMessage
 from app.services.redis_service import redis_service
 from datetime import datetime
+from app.services.agent_service import AgentService
 
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
         self.settings = get_settings()
         self.document_service = DocumentService()
         self.vector_service = VectorService()
+        self.agent_service = AgentService()
         self._initialized = False
         logger.info("AgentServiceServicer initialized")
     
@@ -297,52 +299,22 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
     def SendMessage(self, request: chat_pb2.ChatRequest, context) -> chat_pb2.ChatResponse:
         """Send chat message using RAG with Davel's persona and persistent memory."""
         try:
-            self._ensure_initialized()
-            question = request.message
-            session_id = request.session_id if request.session_id else "default_session"
-
-            # Load chat history from Redis and memory
-            memory = memory_manager.load_history(session_id)
-            # Add user message to memory
-            memory.chat_memory.add_message(HumanMessage(content=question))
-            # Format chat history for RAG
-            chat_history_str = "\n".join([
-                f"User: {m.content}" if isinstance(m, HumanMessage) else f"Assistant: {m.content}"
-                for m in memory.chat_memory.messages
-            ])
-            # Answer question using RAG
-            result = rag_service.answer_question(
-                question=question,
-                chat_history=chat_history_str,
-                include_sources=True,
-                k=request.max_tokens if request.max_tokens > 0 else None
+            response = self.agent_service.send_message(
+                message=request.message,
+                session_id=request.session_id,
+                use_tools=request.use_tools,
+                max_tokens=request.max_tokens
             )
-            # Add assistant message to memory
-            memory.chat_memory.add_message(AIMessage(content=result.get("answer", "")))
-            # Persist updated history
-            memory_manager.save_history(session_id)
-            # Convert sources to list of strings
-            sources = result.get("sources", [])
-            if isinstance(sources, list):
-                source_strings = [str(s) for s in sources]
-            else:
-                source_strings = [str(sources)] if sources else []
             return chat_pb2.ChatResponse(
-                response=result.get("answer", "I apologize, but I couldn't generate a response."),
-                session_id=session_id,
-                sources=source_strings,
-                tool_calls=[],
-                reasoning=f"Retrieved {result.get('documents_retrieved', 0)} documents from vector store",
-                status=common_pb2.Status(success=True, message="RAG response generated successfully")
+                response=response["response"],
+                session_id=response["session_id"],
+                sources=response["sources"],
+                tool_calls=response["tool_calls"],
+                reasoning=response["reasoning"],
+                status=common_pb2.Status(success=True)
             )
         except Exception as e:
-            logger.error(f"SendMessage failed: {e}")
             return chat_pb2.ChatResponse(
-                response="I apologize, but I'm experiencing technical difficulties right now.",
-                session_id=request.session_id if request.session_id else "default_session",
-                sources=[],
-                tool_calls=[],
-                reasoning="Error occurred during RAG processing",
                 status=common_pb2.Status(
                     success=False,
                     message=str(e),
