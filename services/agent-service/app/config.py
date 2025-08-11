@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     langchain_project: str = Field(default="davel-agent", env="LANGCHAIN_PROJECT")
     
     # gRPC Configuration
-    grpc_port: int = Field(default=50051, env="GRPC_PORT")
+    grpc_port: int = Field(default=50052, env="GRPC_PORT")
     grpc_max_workers: int = Field(default=10, env="GRPC_MAX_WORKERS")
     grpc_enable_reflection: bool = Field(default=True, env="GRPC_ENABLE_REFLECTION")
     

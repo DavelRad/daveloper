@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package common;
+
+message Empty {}
+
+message Status {
+  bool success = 1;
+  string message = 2;
+  int32 code = 3;
+}
+
+message StatusResponse {
+  Status status = 1;
+}
+
+message HealthResponse {
+  bool healthy = 1;
+  string version = 2;
+  map<string, string> dependencies = 3;
+} 

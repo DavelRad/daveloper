@@ -1,9 +1,11 @@
 import grpc
 import logging
 from typing import Dict, Any
+import uuid
+import time
 
+from generated.agent_service_pb2_grpc import AgentServiceServicer as BaseAgentServiceServicer
 from generated import (
-    agent_service_pb2_grpc, 
     agent_service_pb2,
     common_pb2, 
     chat_pb2, 
@@ -27,6 +29,18 @@ from app.services.redis_service import redis_service
 from datetime import datetime
 from app.services.agent_service import AgentService
 
+# MVP: Enhanced error handling and validation
+class ValidationError(Exception):
+    """Custom exception for input validation errors."""
+    pass
+
+class ServiceTimeoutError(Exception):
+    """Custom exception for service timeout errors."""
+    pass
+
+class ServiceUnavailableError(Exception):
+    """Custom exception for service unavailable errors."""
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +86,7 @@ class MemoryManager:
 
 memory_manager = MemoryManager()
 
-class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
+class AgentServiceServicer(BaseAgentServiceServicer):
     """gRPC servicer implementation for the Agent Service."""
     
     def __init__(self):
@@ -296,40 +310,123 @@ class AgentServiceServicer(agent_service_pb2_grpc.AgentServiceServicer):
     
     # RAG Chat Implementation (Phase 4)
     
+    def _validate_chat_request(self, request: chat_pb2.ChatRequest) -> None:
+        """MVP: Validate chat request input."""
+        if not request.message or not request.message.strip():
+            raise ValidationError("Message cannot be empty")
+        
+        if len(request.message) > 10000:  # 10k char limit
+            raise ValidationError("Message too long (max 10,000 characters)")
+            
+        if request.session_id and len(request.session_id) > 100:
+            raise ValidationError("Session ID too long (max 100 characters)")
+            
+        if request.max_tokens and (request.max_tokens < 1 or request.max_tokens > 8192):
+            raise ValidationError("Max tokens must be between 1 and 8192")
+
+    def _create_error_response(self, error: Exception, correlation_id: str) -> chat_pb2.ChatResponse:
+        """MVP: Create standardized error response."""
+        if isinstance(error, ValidationError):
+            error_code = grpc.StatusCode.INVALID_ARGUMENT.value[0]
+            error_message = f"Invalid input: {str(error)}"
+        elif isinstance(error, ServiceTimeoutError):
+            error_code = grpc.StatusCode.DEADLINE_EXCEEDED.value[0]
+            error_message = "Request timed out. Please try again."
+        elif isinstance(error, ServiceUnavailableError):
+            error_code = grpc.StatusCode.UNAVAILABLE.value[0]
+            error_message = "Service temporarily unavailable. Please try again later."
+        else:
+            error_code = grpc.StatusCode.INTERNAL.value[0]
+            error_message = "An unexpected error occurred. Please try again."
+            
+        logger.error(f"[{correlation_id}] Error in SendMessage: {error_message} - {str(error)}")
+        
+        return chat_pb2.ChatResponse(
+            response="I'm sorry, I encountered an error processing your request. Please try again.",
+            session_id="",
+            sources=[],
+            tool_calls=[],
+            reasoning=f"Error: {error_message}",
+            status=common_pb2.Status(
+                success=False,
+                message=error_message,
+                code=error_code
+            )
+        )
+
     def SendMessage(self, request: chat_pb2.ChatRequest, context) -> chat_pb2.ChatResponse:
         """Send chat message using agent streaming with Redis pub/sub for real-time tokens."""
+        # MVP: Generate correlation ID for request tracking
+        correlation_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+        
+        logger.info(f"[{correlation_id}] SendMessage started - session: {request.session_id}, message_len: {len(request.message)}")
+        
         try:
+            # MVP: Input validation
+            self._validate_chat_request(request)
+            
+            # MVP: Ensure services are initialized with timeout
+            try:
+                self._ensure_initialized()
+            except Exception as e:
+                raise ServiceUnavailableError(f"Service initialization failed: {str(e)}")
+            
+            # MVP: Set default values for missing optional fields
+            session_id = request.session_id if request.session_id else f"session_{correlation_id}"
+            max_tokens = request.max_tokens if request.max_tokens else 4096
+            use_tools = request.use_tools if hasattr(request, 'use_tools') else True
+            
+            # MVP: Process with timeout (30 seconds for MVP)
+            timeout_start = time.time()
+            timeout_seconds = 30
+            
             # Collect all streaming tokens while publishing to Redis
             full_response = ""
             tool_calls = []
             sources = []
             reasoning = ""
             
+            logger.info(f"[{correlation_id}] Starting agent streaming for session: {session_id}")
+            
             for token in self.agent_service.send_message_streaming(
                 message=request.message,
-                session_id=request.session_id,
-                use_tools=request.use_tools,
-                max_tokens=request.max_tokens
+                session_id=session_id,
+                use_tools=use_tools,
+                max_tokens=max_tokens
             ):
+                # MVP: Check timeout during streaming
+                if time.time() - timeout_start > timeout_seconds:
+                    raise ServiceTimeoutError("Request processing timed out")
+                    
                 full_response += token
             
-            # Final response with complete content
+            processing_time = time.time() - start_time
+            logger.info(f"[{correlation_id}] SendMessage completed - response_len: {len(full_response)}, time: {processing_time:.2f}s")
+            
+            # MVP: Enhanced response with better metadata
             return chat_pb2.ChatResponse(
                 response=full_response,
-                session_id=request.session_id,
+                session_id=session_id,
                 sources=sources,
                 tool_calls=tool_calls,
-                reasoning="Streaming completed via Redis",
-                status=common_pb2.Status(success=True)
-            )
-        except Exception as e:
-            return chat_pb2.ChatResponse(
+                reasoning=f"Processed in {processing_time:.2f}s via streaming",
                 status=common_pb2.Status(
-                    success=False,
-                    message=str(e),
-                    code=grpc.StatusCode.INTERNAL.value[0]
+                    success=True,
+                    message="Message processed successfully"
                 )
             )
+            
+        except ValidationError as e:
+            return self._create_error_response(e, correlation_id)
+        except ServiceTimeoutError as e:
+            return self._create_error_response(e, correlation_id)
+        except ServiceUnavailableError as e:
+            return self._create_error_response(e, correlation_id)
+        except Exception as e:
+            # MVP: Log unexpected errors with full context
+            logger.error(f"[{correlation_id}] Unexpected error in SendMessage: {str(e)}", exc_info=True)
+            return self._create_error_response(e, correlation_id)
 
     def GetChatHistory(self, request: chat_pb2.GetChatHistoryRequest, context) -> chat_pb2.GetChatHistoryResponse:
         """Get chat history for a session from Redis."""

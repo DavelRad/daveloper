@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package agent_service;
+
+import "chat.proto";
+import "documents.proto";
+import "common.proto";
+
+service AgentService {
+  // Chat operations
+  rpc SendMessage(chat.ChatRequest) returns (chat.ChatResponse);
+  rpc GetChatHistory(chat.GetChatHistoryRequest) returns (chat.GetChatHistoryResponse);
+  rpc ClearChatHistory(chat.ClearChatHistoryRequest) returns (common.StatusResponse);
+  
+  // Document operations
+  rpc IngestDocuments(documents.IngestRequest) returns (documents.IngestResponse);
+  rpc GetDocumentStatus(documents.StatusRequest) returns (documents.StatusResponse);
+  rpc ListDocuments(documents.ListRequest) returns (documents.ListResponse);
+  rpc DeleteDocument(documents.DeleteRequest) returns (common.StatusResponse);
+  
+  // Tool operations
+  rpc ListTools(common.Empty) returns (ToolsListResponse);
+  rpc TestTool(ToolTestRequest) returns (ToolTestResponse);
+  
+  // Health check
+  rpc HealthCheck(common.Empty) returns (common.HealthResponse);
+}
+
+message ToolsListResponse {
+  repeated ToolInfo tools = 1;
+}
+
+message ToolInfo {
+  string name = 1;
+  string description = 2;
+  bool available = 3;
+}
+
+message ToolTestRequest {
+  string tool_name = 1;
+  map<string, string> parameters = 2;
+}
+
+message ToolTestResponse {
+  bool success = 1;
+  string result = 2;
+  string error_message = 3;
+} 

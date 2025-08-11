@@ -7,8 +7,18 @@
 import logging
 import signal
 import sys
+import os
 from contextlib import contextmanager
 import threading
+from pathlib import Path
+
+# Load environment variables first
+from dotenv import load_dotenv
+
+# Load .env file from the project root
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(env_path)
+load_dotenv()  # Also try current directory
 
 import uvicorn
 from fastapi import FastAPI

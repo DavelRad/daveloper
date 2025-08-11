@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package documents;
+
+import "common.proto";
+
+message IngestRequest {
+  repeated string file_paths = 1;
+  bool force_reingest = 2;
+}
+
+message IngestResponse {
+  string job_id = 1;
+  common.Status status = 2;
+}
+
+message StatusRequest {
+  string job_id = 1;
+}
+
+message StatusResponse {
+  string job_id = 1;
+  string status = 2; // "processing", "completed", "failed"
+  int32 total_documents = 3;
+  int32 processed_documents = 4;
+  string error_message = 5;
+}
+
+message ListRequest {
+  // Empty for now, could add filtering options later
+}
+
+message ListResponse {
+  repeated DocumentInfo documents = 1;
+  common.Status status = 2;
+}
+
+message DeleteRequest {
+  string document_id = 1;
+}
+
+message DocumentInfo {
+  string id = 1;
+  string filename = 2;
+  string document_type = 3;
+  int64 upload_date = 4;
+  int32 chunk_count = 5;
+  string status = 6;
+} 

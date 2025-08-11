@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package news_scraper;
+
+// News Scraper Service
+service NewsScraperService {
+  // Main method to scrape and process articles
+  rpc ScrapeArticles(ScrapeRequest) returns (ScrapeResponse);
+  
+  // Get processed articles from database
+  rpc GetArticles(GetArticlesRequest) returns (GetArticlesResponse);
+  
+  // Health check endpoint
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+// Request message for scraping articles
+message ScrapeRequest {
+  int32 max_articles = 1;  // Maximum number of articles to process
+  string query = 2;        // Search query for news API (optional)
+}
+
+// Response message for scraping articles
+message ScrapeResponse {
+  bool success = 1;
+  string message = 2;
+  repeated Article articles = 3;
+  int32 processed_count = 4;
+  string timestamp = 5;
+}
+
+// Request message for getting articles
+message GetArticlesRequest {
+  int32 limit = 1;         // Number of articles to return
+  int32 offset = 2;        // Offset for pagination
+}
+
+// Response message for getting articles
+message GetArticlesResponse {
+  bool success = 1;
+  repeated Article articles = 2;
+  int32 total_count = 3;
+}
+
+// Health check request
+message HealthRequest {}
+
+// Health check response
+message HealthResponse {
+  bool healthy = 1;
+  string status = 2;
+  string timestamp = 3;
+}
+
+// Article message
+message Article {
+  string id = 1;
+  string title = 2;
+  string content = 3;
+  string url = 4;
+  string published_date = 5;
+  string author = 6;
+  string image_url = 7;
+  Summary summary = 8;
+  repeated string tags = 9;
+  string created_at = 10;
+}
+
+// Summary message
+message Summary {
+  string summary_text = 1;
+  repeated string key_points = 2;
+  repeated string tags = 3;
+} 

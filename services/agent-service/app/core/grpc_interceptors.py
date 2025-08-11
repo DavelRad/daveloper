@@ -37,7 +37,17 @@ class RateLimitInterceptor(grpc.ServerInterceptor):
         # Extract client info for rate limiting key
         method_name = handler_call_details.method
         # Use method + remote address as rate limit key
-        remote_addr = getattr(handler_call_details, 'invocation_metadata', {}).get('remote_addr', 'unknown')
+        # Fix: invocation_metadata is a tuple, not a dict
+        remote_addr = 'unknown'
+        if hasattr(handler_call_details, 'invocation_metadata'):
+            metadata = handler_call_details.invocation_metadata
+            if metadata:
+                # Look for remote address in metadata tuples
+                for key, value in metadata:
+                    if key == 'remote_addr':
+                        remote_addr = value
+                        break
+        
         rate_key = f"grpc_rate_limit:{method_name}:{remote_addr}"
         
         if not self.rate_limiter.is_allowed(rate_key):
